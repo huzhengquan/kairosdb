@@ -22,6 +22,7 @@ import com.google.inject.name.Named;
 import me.prettyprint.cassandra.model.ConfigurableConsistencyLevel;
 import me.prettyprint.cassandra.serializers.BytesArraySerializer;
 import me.prettyprint.cassandra.serializers.IntegerSerializer;
+import me.prettyprint.cassandra.serializers.LongSerializer;
 import me.prettyprint.cassandra.serializers.StringSerializer;
 import me.prettyprint.cassandra.service.CassandraHostConfigurator;
 import me.prettyprint.cassandra.service.ColumnSliceIterator;
@@ -65,7 +66,7 @@ public class CassandraDatastore implements Datastore
 	public static final DataPointsRowKeySerializer DATA_POINTS_ROW_KEY_SERIALIZER = new DataPointsRowKeySerializer();
 
 
-	public static final long ROW_WIDTH = 1814400000L; //3 Weeks wide
+	public static final long ROW_WIDTH = 86400000000L; //1814400000L; //3 Weeks wide ~ 20160507 huzhengquan change days 1000
 
 	public static final String KEY_QUERY_TIME = "kairosdb.datastore.cassandra.key_query_time";
 
@@ -86,7 +87,7 @@ public class CassandraDatastore implements Datastore
 	private int m_singleRowReadSize;
 	private int m_multiRowSize;
 	private int m_multiRowReadSize;
-	private WriteBuffer<DataPointsRowKey, Integer, byte[]> m_dataPointWriteBuffer;
+	private WriteBuffer<DataPointsRowKey, Long, byte[]> m_dataPointWriteBuffer;
 	private WriteBuffer<String, DataPointsRowKey, String> m_rowKeyWriteBuffer;
 	private WriteBuffer<String, String, String> m_stringIndexWriteBuffer;
 
@@ -149,11 +150,11 @@ public class CassandraDatastore implements Datastore
 			ReentrantLock mutatorLock = new ReentrantLock();
 			Condition lockCondition = mutatorLock.newCondition();
 
-			m_dataPointWriteBuffer = new WriteBuffer<DataPointsRowKey, Integer, byte[]>(
+			m_dataPointWriteBuffer = new WriteBuffer<DataPointsRowKey, Long, byte[]>(
 					m_keyspace, CF_DATA_POINTS, m_cassandraConfiguration.getWriteDelay(),
 					m_cassandraConfiguration.getMaxWriteSize(),
 					DATA_POINTS_ROW_KEY_SERIALIZER,
-					IntegerSerializer.get(),
+					LongSerializer.get(),
 					BytesArraySerializer.get(),
 					createWriteBufferStats(CF_DATA_POINTS, hostname),
 					mutatorLock, lockCondition, threadCount);
@@ -348,7 +349,7 @@ public class CassandraDatastore implements Datastore
 				}
 			}
 
-			int columnTime = getColumnName(rowTime, dataPoint.getTimestamp());
+			long columnTime = getColumnName(rowTime, dataPoint.getTimestamp());
 			KDataOutput kDataOutput = new KDataOutput();
 			dataPoint.writeValueToBuffer(kDataOutput);
 			m_dataPointWriteBuffer.addData(rowKey, columnTime,
@@ -596,9 +597,9 @@ public class CassandraDatastore implements Datastore
 	 @return
 	 */
 	@SuppressWarnings("PointlessBitwiseExpression")
-	private static int getColumnName(long rowTime, long timestamp, boolean isInteger)
+	private static long getColumnName(long rowTime, long timestamp, boolean isInteger)
 	{
-		int ret = (int) (timestamp - rowTime);
+		long ret = (long) (timestamp - rowTime);
 
 		if (isInteger)
 			return ((ret << 1) | LONG_FLAG);
@@ -608,9 +609,9 @@ public class CassandraDatastore implements Datastore
 	}
 
 	@SuppressWarnings("PointlessBitwiseExpression")
-	public static int getColumnName(long rowTime, long timestamp)
+	public static long getColumnName(long rowTime, long timestamp)
 	{
-		int ret = (int) (timestamp - rowTime);
+		long ret = (long) (timestamp - rowTime);
 
 		/*
 			The timestamp is shifted to support legacy datapoints that
@@ -619,12 +620,12 @@ public class CassandraDatastore implements Datastore
 		return (ret << 1);
 	}
 
-	public static long getColumnTimestamp(long rowTime, int columnName)
+	public static long getColumnTimestamp(long rowTime, long columnName)
 	{
 		return (rowTime + (long) (columnName >>> 1));
 	}
 
-	public static boolean isLongValue(int columnName)
+	public static boolean isLongValue(long columnName)
 	{
 		return ((columnName & 0x1) == LONG_FLAG);
 	}
@@ -765,7 +766,7 @@ public class CassandraDatastore implements Datastore
 				m_currentRow = new DataPointsRowKey(m_metric, rowTime, m_currentType, m_currentTags);
 			}
 
-			int columnName;
+			long columnName;
 			//Handle old column name format.
 			//We get the type after it has been translated from "" to kairos_legacy
 			if (m_currentType.equals(LegacyDataPointFactory.DATASTORE_TYPE))
